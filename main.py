@@ -1,4 +1,3 @@
-
 import logging
 import os
 import random
@@ -26,7 +25,7 @@ def get_keyboard():
     kb = InlineKeyboardMarkup()
     kb.add(
         InlineKeyboardButton("▶️ Next", callback_data="next"),
-        InlineKeyboardButton("🔁 Replay", callback_data="replay")
+        InlineKeyboardButton("📜 Playlist", callback_data="show_playlist")  # Nomainīts no "Replay"
     )
     return kb
 
@@ -52,6 +51,29 @@ def extract_metadata(file_path, fallback_title):
     except Exception:
         title, artist = fallback_title, "$SQUONK"
     return title, artist
+
+async def generate_playlist(chat_id):
+    group_id = str(chat_id)
+    folder = os.path.join(SONGS_FOLDER, group_id)
+    if not os.path.exists(folder):
+        return "❌ No songs found.", None
+
+    songs = [f for f in os.listdir(folder) if f.endswith(".mp3")]
+    if not songs:
+        return "❌ Playlist is empty.", None
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    text = "🎵 Playlist:\n"
+    for f in songs:
+        meta_path = os.path.join(folder, f + ".json")
+        title = os.path.splitext(f)[0]
+        if os.path.exists(meta_path):
+            with open(meta_path) as meta:
+                m = json.load(meta)
+                title = m.get("title", title)
+        text += f"• {title}\n"
+        kb.add(InlineKeyboardButton(f"▶️ {title}", callback_data=f"play:{f}"))
+    return text, kb
 
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
@@ -126,25 +148,7 @@ async def play(message: types.Message):
 
 @dp.message_handler(commands=["playlist"])
 async def playlist(message: types.Message):
-    group_id = str(message.chat.id)
-    folder = os.path.join(SONGS_FOLDER, group_id)
-    if not os.path.exists(folder):
-        return await message.reply("❌ No songs found.")
-    songs = [f for f in os.listdir(folder) if f.endswith(".mp3")]
-    if not songs:
-        return await message.reply("❌ Playlist is empty.")
-
-    kb = InlineKeyboardMarkup(row_width=1)
-    text = "🎵 Playlist:\n"
-    for f in songs:
-        meta_path = os.path.join(folder, f + ".json")
-        title = os.path.splitext(f)[0]
-        if os.path.exists(meta_path):
-            with open(meta_path) as meta:
-                m = json.load(meta)
-                title = m.get("title", title)
-        text += f"• {title}\n"
-        kb.add(InlineKeyboardButton(f"▶️ {title}", callback_data=f"play:{f}"))
+    text, kb = await generate_playlist(message.chat.id)
     await message.reply(text, reply_markup=kb)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("play:"))
@@ -171,7 +175,7 @@ async def callback_play_specific(call: types.CallbackQuery):
     )
     await call.answer()
 
-@dp.callback_query_handler(lambda c: c.data in ["next", "replay"])
+@dp.callback_query_handler(lambda c: c.data in ["next", "show_playlist"])
 async def callback_buttons(call: types.CallbackQuery):
     group_id = str(call.message.chat.id)
     folder = os.path.join(SONGS_FOLDER, group_id)
@@ -179,24 +183,29 @@ async def callback_buttons(call: types.CallbackQuery):
     if not songs:
         return await call.answer("❌ No songs available.", show_alert=True)
 
-    chosen = random.choice(songs) if call.data == "next" else songs[0]
-    base = os.path.splitext(chosen)[0]
-    meta_path = os.path.join(folder, chosen + ".json")
-    title, artist = base, "$SQUONK"
-    if os.path.exists(meta_path):
-        with open(meta_path) as f:
-            meta = json.load(f)
-            title = meta.get("title", base)
-            artist = meta.get("artist", "$SQUONK")
+    if call.data == "next":
+        chosen = random.choice(songs)
+        base = os.path.splitext(chosen)[0]
+        meta_path = os.path.join(folder, chosen + ".json")
+        title, artist = base, "$SQUONK"
+        if os.path.exists(meta_path):
+            with open(meta_path) as f:
+                meta = json.load(f)
+                title = meta.get("title", base)
+                artist = meta.get("artist", "$SQUONK")
 
-    await bot.send_audio(
-        call.message.chat.id,
-        open(os.path.join(folder, chosen), "rb"),
-        title=title,
-        performer=artist,
-        caption="▶️ Next beat!" if call.data == "next" else "🔁 Replay mode!",
-        reply_markup=get_keyboard()
-    )
+        await bot.send_audio(
+            call.message.chat.id,
+            open(os.path.join(folder, chosen), "rb"),
+            title=title,
+            performer=artist,
+            caption="▶️ Next beat!",
+            reply_markup=get_keyboard()
+        )
+    elif call.data == "show_playlist":
+        text, kb = await generate_playlist(call.message.chat.id)
+        await call.message.reply(text, reply_markup=kb)
+
     await call.answer()
 
 if __name__ == "__main__":
