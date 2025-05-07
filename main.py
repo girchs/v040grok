@@ -2,6 +2,7 @@ import logging
 import os
 import random
 import json
+import asyncio
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
@@ -21,12 +22,22 @@ SESSIONS_FOLDER = "user_sessions"
 os.makedirs(SONGS_FOLDER, exist_ok=True)
 os.makedirs(SESSIONS_FOLDER, exist_ok=True)
 
-def get_keyboard():
+# Globālie mainīgie atskaņotāja stāvokļa pārvaldībai
+player_active = {}  # {group_id: bool} – vai atskaņotājs ir aktīvs grupā
+player_message = {}  # {group_id: message_id} – pēdējās dziesmas ziņojuma ID
+
+def get_keyboard(player_mode=False):
     kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton("▶️ Next", callback_data="next"),
-        InlineKeyboardButton("📜 Playlist", callback_data="show_playlist")  # Nomainīts no "Replay"
-    )
+    if player_mode:
+        kb.add(
+            InlineKeyboardButton("▶️ Play Next Automatically", callback_data="next_auto"),
+            InlineKeyboardButton("📜 Playlist", callback_data="show_playlist")
+        )
+    else:
+        kb.add(
+            InlineKeyboardButton("▶️ Next", callback_data="next"),
+            InlineKeyboardButton("📜 Playlist", callback_data="show_playlist")
+        )
     return kb
 
 def get_session_path(user_id):
@@ -75,11 +86,56 @@ async def generate_playlist(chat_id):
         kb.add(InlineKeyboardButton(f"▶️ {title}", callback_data=f"play:{f}"))
     return text, kb
 
+async def play_song(chat_id, song_file=None, player_mode=False):
+    group_id = str(chat_id)
+    folder = os.path.join(SONGS_FOLDER, group_id)
+    songs = [f for f in os.listdir(folder) if f.endswith(".mp3")]
+    if not songs:
+        return None, None
+
+    chosen = song_file if song_file else random.choice(songs)
+    base = os.path.splitext(chosen)[0]
+    meta_path = os.path.join(folder, chosen + ".json")
+    file_path = os.path.join(folder, chosen)
+    title, artist = base, "$SQUONK"
+    duration = int(MP3(file_path).info.length)
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            meta = json.load(f)
+            title = meta.get("title", base)
+            artist = meta.get("artist", "$SQUONK")
+
+    message = await bot.send_audio(
+        chat_id,
+        open(file_path, "rb"),
+        title=title,
+        performer=artist,
+        duration=duration,
+        caption=(
+            f"🎶 Squonking time!\n"
+            "Press the Play button above to listen! 🎵\n"
+            "Powered by $SQUONK – Learn more at squonk.meme"
+        ),
+        reply_markup=get_keyboard(player_mode=player_mode)
+    )
+    return message, duration
+
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
     await message.reply(
-        "👋 Welcome to Squonk Radio V0.4.0!\n"
-        "Use /setup in private chat or /play in group."
+        "🎵 **Get Ready to Squonk with $SQUONK Music Player V1!** 🎶\n"
+        "Hey there, Squonker! Welcome to the ultimate music experience for the $SQUONK community! 🚀\n\n"
+        "🔥 **What’s this all about?**\n"
+        "We’re here to bring you the squonkiest beats while celebrating the $SQUONK token. Play tracks, vibe with friends, and dive into the world of $SQUONK – all in one place!\n\n"
+        "🎸 **How to Squonk:**\n"
+        "- Use /play to spin a single track.\n"
+        "- Fire up /start_player for non-stop squonking (stop it with /stop_player).\n"
+        "- Check out all tracks with /playlist.\n"
+        "- Learn more about $SQUONK with /token.\n"
+        "💡 *Tip:* Press the Play button on each track to listen!\n\n"
+        "🌟 **Powered by $SQUONK**\n"
+        "This player is brought to you by the $SQUONK token – the heart of our ecosystem. Want to know more? Visit squonk.meme and join the squonking revolution!\n\n"
+        "Let’s make some noise together! 🎤 #SquonkMusic #SQUONK"
     )
 
 @dp.message_handler(commands=["setup"])
@@ -128,54 +184,62 @@ async def play(message: types.Message):
     if not songs:
         return await message.reply("❌ No audio files found.")
 
-    chosen = random.choice(songs)
-    base = os.path.splitext(chosen)[0]
-    meta_path = os.path.join(folder, chosen + ".json")
-    title, artist = base, "$SQUONK"
-    if os.path.exists(meta_path):
-        with open(meta_path) as f:
-            meta = json.load(f)
-            title = meta.get("title", base)
-            artist = meta.get("artist", "$SQUONK")
+    message, duration = await play_song(message.chat.id)
+    if message:
+        player_message[group_id] = message.message_id
 
-    await message.reply_audio(
-        open(os.path.join(folder, chosen), "rb"),
-        title=title,
-        performer=artist,
-        caption="🎶 Squonking time!",
-        reply_markup=get_keyboard()
+@dp.message_handler(commands=["start_player"])
+async def start_player(message: types.Message):
+    group_id = str(message.chat.id)
+    if player_active.get(group_id, False):
+        return await message.reply("🎵 Music player is already active! Use /stop_player to stop.")
+    
+    player_active[group_id] = True
+    await message.reply(
+        "🎵 Starting Squonk Music Player! 🎶\n"
+        "Each track will load automatically. Press the Play button on each track to listen.\n"
+        "Use /stop_player to stop the player."
     )
+    message, duration = await play_song(message.chat.id, player_mode=True)
+    if message:
+        player_message[group_id] = message.message_id
+
+@dp.message_handler(commands=["stop_player"])
+async def stop_player(message: types.Message):
+    group_id = str(message.chat.id)
+    if not player_active.get(group_id, False):
+        return await message.reply("🎵 Music player is not active!")
+    
+    player_active[group_id] = False
+    if group_id in player_message:
+        await bot.delete_message(chat_id=message.chat.id, message_id=player_message[group_id])
+        del player_message[group_id]
+    await message.reply("🎵 Squonk Music Player stopped.")
 
 @dp.message_handler(commands=["playlist"])
 async def playlist(message: types.Message):
     text, kb = await generate_playlist(message.chat.id)
     await message.reply(text, reply_markup=kb)
 
+@dp.message_handler(commands=["token"])
+async def token_info(message: types.Message):
+    await message.reply(
+        "💰 **$SQUONK Token Info**\n"
+        "The heart of the Squonk ecosystem! $SQUONK powers our community and music player.\n"
+        "🌐 Learn more at squonk.meme\n"
+        "Join the squonking revolution! 🚀"
+    )
+
 @dp.callback_query_handler(lambda c: c.data.startswith("play:"))
 async def callback_play_specific(call: types.CallbackQuery):
     group_id = str(call.message.chat.id)
     song_file = call.data.split(":", 1)[1]
-    folder = os.path.join(SONGS_FOLDER, group_id)
-    path = os.path.join(folder, song_file)
-    meta_path = path + ".json"
-    title, artist = os.path.splitext(song_file)[0], "$SQUONK"
-    if os.path.exists(meta_path):
-        with open(meta_path) as f:
-            meta = json.load(f)
-            title = meta.get("title", title)
-            artist = meta.get("artist", "$SQUONK")
-
-    await bot.send_audio(
-        call.message.chat.id,
-        open(path, "rb"),
-        title=title,
-        performer=artist,
-        caption="🎧 Playing selected track!",
-        reply_markup=get_keyboard()
-    )
+    message, duration = await play_song(call.message.chat.id, song_file, player_mode=player_active.get(group_id, False))
+    if message:
+        player_message[group_id] = message.message_id
     await call.answer()
 
-@dp.callback_query_handler(lambda c: c.data in ["next", "show_playlist"])
+@dp.callback_query_handler(lambda c: c.data in ["next", "next_auto", "show_playlist"])
 async def callback_buttons(call: types.CallbackQuery):
     group_id = str(call.message.chat.id)
     folder = os.path.join(SONGS_FOLDER, group_id)
@@ -183,25 +247,10 @@ async def callback_buttons(call: types.CallbackQuery):
     if not songs:
         return await call.answer("❌ No songs available.", show_alert=True)
 
-    if call.data == "next":
-        chosen = random.choice(songs)
-        base = os.path.splitext(chosen)[0]
-        meta_path = os.path.join(folder, chosen + ".json")
-        title, artist = base, "$SQUONK"
-        if os.path.exists(meta_path):
-            with open(meta_path) as f:
-                meta = json.load(f)
-                title = meta.get("title", base)
-                artist = meta.get("artist", "$SQUONK")
-
-        await bot.send_audio(
-            call.message.chat.id,
-            open(os.path.join(folder, chosen), "rb"),
-            title=title,
-            performer=artist,
-            caption="▶️ Next beat!",
-            reply_markup=get_keyboard()
-        )
+    if call.data in ["next", "next_auto"]:
+        message, duration = await play_song(call.message.chat.id, player_mode=player_active.get(group_id, False))
+        if message:
+            player_message[group_id] = message.message_id
     elif call.data == "show_playlist":
         text, kb = await generate_playlist(call.message.chat.id)
         await call.message.reply(text, reply_markup=kb)
