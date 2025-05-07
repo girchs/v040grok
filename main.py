@@ -25,6 +25,7 @@ os.makedirs(SESSIONS_FOLDER, exist_ok=True)
 # Globālie mainīgie atskaņotāja stāvokļa pārvaldībai
 player_active = {}  # {group_id: bool} – vai atskaņotājs ir aktīvs grupā
 player_message = {}  # {group_id: message_id} – pēdējās dziesmas ziņojuma ID
+active_chats = set()  # Čatu ID saraksts, kuros bots ir aktīvs
 
 # Meme teksti par kriptopasauli un mūziku
 meme_texts = [
@@ -163,7 +164,7 @@ async def play_song(chat_id, song_file=None, player_mode=False):
 
     # Izvēlamies nejaušu meme tekstu un izceļam to
     meme_text = random.choice(meme_texts)
-    formatted_meme_text = f"*🟡 {meme_text} 🟡*"
+    formatted_meme_text = f"*{meme_text}*"
 
     message = await bot.send_audio(
         chat_id,
@@ -183,8 +184,23 @@ async def play_song(chat_id, song_file=None, player_mode=False):
     )
     return message, duration
 
+# Fona uzdevums, kas ik pēc 30 minūtēm iemet nejaušu dziesmu čatā
+async def auto_play_task():
+    while True:
+        for chat_id in list(active_chats):  # Kopējam sarakstu, lai izvairītos no izmaiņām cikla laikā
+            try:
+                message, duration = await play_song(chat_id)
+                if message:
+                    player_message[str(chat_id)] = message.message_id
+            except Exception as e:
+                logging.error(f"Error in auto_play_task for chat {chat_id}: {e}")
+        await asyncio.sleep(30 * 60)  # Gaidām 30 minūtes (30 * 60 sekundes)
+
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
+    # Pievienojam čatu aktīvo sarakstam, ja tas ir grupas čats
+    if message.chat.type in ["group", "supergroup"]:
+        active_chats.add(message.chat.id)
     await message.reply(
         "🎵 **Get Ready to Squonk with $SQUONK Music Player V1!** 🎶\n"
         "Hey there, Squonker! Welcome to the ultimate music experience for the $SQUONK community! 🚀\n\n"
@@ -240,6 +256,8 @@ async def handle_audio(message: types.Message):
 @dp.message_handler(commands=["play"])
 async def play(message: types.Message):
     group_id = str(message.chat.id)
+    # Pievienojam čatu aktīvo sarakstam
+    active_chats.add(message.chat.id)
     folder = os.path.join(SONGS_FOLDER, group_id)
     if not os.path.exists(folder):
         return await message.reply("❌ No songs found for this group.")
@@ -254,6 +272,8 @@ async def play(message: types.Message):
 @dp.message_handler(commands=["start_player"])
 async def start_player(message: types.Message):
     group_id = str(message.chat.id)
+    # Pievienojam čatu aktīvo sarakstam
+    active_chats.add(message.chat.id)
     if player_active.get(group_id, False):
         return await message.reply("🎵 Music player is already active! Use /stop_player to stop.")
     
@@ -270,6 +290,8 @@ async def start_player(message: types.Message):
 @dp.message_handler(commands=["stop_player"])
 async def stop_player(message: types.Message):
     group_id = str(message.chat.id)
+    # Čats paliek aktīvs, lai turpinātu automātisko atskaņošanu
+    active_chats.add(message.chat.id)
     if not player_active.get(group_id, False):
         return await message.reply("🎵 Music player is not active!")
     
@@ -281,11 +303,16 @@ async def stop_player(message: types.Message):
 
 @dp.message_handler(commands=["playlist"])
 async def playlist(message: types.Message):
+    # Pievienojam čatu aktīvo sarakstam
+    active_chats.add(message.chat.id)
     text, kb = await generate_playlist(message.chat.id)
     await message.reply(text, reply_markup=kb)
 
 @dp.message_handler(commands=["token"])
 async def token_info(message: types.Message):
+    # Pievienojam čatu aktīvo sarakstam, ja tas ir grupas čats
+    if message.chat.type in ["group", "supergroup"]:
+        active_chats.add(message.chat.id)
     await message.reply(
         "💰 **$SQUONK Token Info**\n"
         "The heart of the Squonk ecosystem! $SQUONK powers our community and music player.\n"
@@ -296,6 +323,8 @@ async def token_info(message: types.Message):
 @dp.callback_query_handler(lambda c: c.data.startswith("play:"))
 async def callback_play_specific(call: types.CallbackQuery):
     group_id = str(call.message.chat.id)
+    # Pievienojam čatu aktīvo sarakstam
+    active_chats.add(call.message.chat.id)
     song_file = call.data.split(":", 1)[1]
     message, duration = await play_song(call.message.chat.id, song_file, player_mode=player_active.get(group_id, False))
     if message:
@@ -305,6 +334,8 @@ async def callback_play_specific(call: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data in ["next", "next_auto", "show_playlist"])
 async def callback_buttons(call: types.CallbackQuery):
     group_id = str(call.message.chat.id)
+    # Pievienojam čatu aktīvo sarakstam
+    active_chats.add(call.message.chat.id)
     folder = os.path.join(SONGS_FOLDER, group_id)
     songs = [f for f in os.listdir(folder) if f.endswith(".mp3")]
     if not songs:
@@ -320,5 +351,10 @@ async def callback_buttons(call: types.CallbackQuery):
 
     await call.answer()
 
+# Funkcija, kas palaiž fona uzdevumu, kad bots startē
+async def on_startup(_):
+    asyncio.create_task(auto_play_task())
+    logging.info("Bot started and auto-play task scheduled!")
+
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
