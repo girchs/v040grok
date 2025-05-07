@@ -161,8 +161,9 @@ async def play_song(chat_id, song_file=None, player_mode=False):
             title = meta.get("title", base)
             artist = meta.get("artist", "$SQUONK")
 
-    # Izvēlamies nejaušu meme tekstu
+    # Izvēlamies nejaušu meme tekstu un izceļam to
     meme_text = random.choice(meme_texts)
+    formatted_meme_text = f"*🟡 {meme_text} 🟡*"
 
     message = await bot.send_audio(
         chat_id,
@@ -172,11 +173,13 @@ async def play_song(chat_id, song_file=None, player_mode=False):
         duration=duration,
         caption=(
             "Press the Play button above to listen! 🎵\n"
-            f"\n"
-            f"{meme_text}\n"
+            "\n"
+            f"{formatted_meme_text}\n"
+            "\n"
             "Powered by $SQUONK – Learn more at squonk.meme"
         ),
-        reply_markup=get_keyboard(player_mode=player_mode)
+        reply_markup=get_keyboard(player_mode=player_mode),
+        parse_mode="Markdown"
     )
     return message, duration
 
