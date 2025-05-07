@@ -26,6 +26,64 @@ os.makedirs(SESSIONS_FOLDER, exist_ok=True)
 player_active = {}  # {group_id: bool} – vai atskaņotājs ir aktīvs grupā
 player_message = {}  # {group_id: message_id} – pēdējās dziesmas ziņojuma ID
 
+# Meme teksti par kriptopasauli un mūziku
+meme_texts = [
+    "HODL the beat, not just the coin! 🎧",
+    "This track pumps harder than a bull run! 📈",
+    "Crypto vibes only – no fiat tunes here! 💸",
+    "To the moon, and to the dance floor! 🌙",
+    "Play this while you stake your $SQUONK! 🤑",
+    "When the beat drops, so does the market! 📉",
+    "Squonking my way to financial freedom! 🚀",
+    "This song’s a better investment than my altcoins! 🎶",
+    "Turn up the volume, turn down the FUD! 🔊",
+    "Crypto whales love this beat – guaranteed! 🐳",
+    "Wen lambo? Wen this track ends! 🏎️",
+    "This tune’s got more energy than a gas fee! ⛽",
+    "Squonk hard, trade smart! 💡",
+    "When your portfolio dips, but the beat don’t! 📊",
+    "This track’s a 100x gem – don’t miss out! 💎",
+    "Rugpulls can’t stop this rhythm! 🕺",
+    "Play this while you DCA your $SQUONK! 📅",
+    "Mooning to this beat – who needs charts? 🌕",
+    "When the market crashes, but the music slaps! 💥",
+    "This song’s my new wallet seed phrase! 🔑",
+    "Squonking through the bear market like… 🐻",
+    "Crypto bros and sick beats – name a better duo! 👊",
+    "This track’s hotter than a Solana transaction! ⚡",
+    "When your $SQUONK bags are heavy, but the beat is light! 🎒",
+    "Don’t FOMO on this song – it’s a banger! 🚨",
+    "This tune’s got more pumps than a shitcoin! 📈",
+    "Squonk now, panic sell later! 😅",
+    "When the beat hits harder than a market dip! 📉",
+    "This track’s my exit liquidity – I’m out! 🏃",
+    "Play this while you shill $SQUONK to your friends! 🗣️",
+    "Crypto gains and music pains – let’s roll! 🎸",
+    "When the market’s red, but the vibes are green! 🟢",
+    "This song’s a better store of value than BTC! 🪙",
+    "Squonking my way to the next ATH! 📈",
+    "Who needs a whitepaper when you’ve got this beat? 📜",
+    "This track’s my new crypto strategy – vibe only! 🧠",
+    "When the beat’s so good, you forget about your losses! 🥳",
+    "Squonk hard or go home – no paper hands here! ✋",
+    "This song’s my new staking reward! 🎁",
+    "When the market’s down, but the music’s up! 🔊",
+    "This track’s more decentralized than DeFi! 🌐",
+    "Squonking through the dip – nothing can stop me! 💪",
+    "Play this while you wait for the next pump! ⏳",
+    "This beat’s got more utility than my altcoins! 🔧",
+    "When your $SQUONK bags moon, but the beat moons harder! 🌑",
+    "Crypto life, music vibes – the perfect combo! 🎤",
+    "This track’s my new crypto advisor – trust me! 🤝",
+    "Squonk now, DYOR later! 🕵️",
+    "When the beat’s so good, you forget about gas fees! ⛽",
+    "This song’s my new rugpull protection! 🛡️",
+    "Squonking all the way to the bank! 🏦",
+    "Play this while you dream of $SQUONK millions! 💭",
+    "This track’s the only thing I’m not selling! 🚫",
+    "When the market’s volatile, but the beat’s stable! ⚖️"
+]
+
 def get_keyboard(player_mode=False):
     kb = InlineKeyboardMarkup()
     if player_mode:
@@ -74,7 +132,6 @@ async def generate_playlist(chat_id):
         return "❌ Playlist is empty.", None
 
     kb = InlineKeyboardMarkup(row_width=1)
-    text = "🎵 Playlist:\n"
     for f in songs:
         meta_path = os.path.join(folder, f + ".json")
         title = os.path.splitext(f)[0]
@@ -82,9 +139,8 @@ async def generate_playlist(chat_id):
             with open(meta_path) as meta:
                 m = json.load(meta)
                 title = m.get("title", title)
-        text += f"• {title}\n"
         kb.add(InlineKeyboardButton(f"▶️ {title}", callback_data=f"play:{f}"))
-    return text, kb
+    return "🎵 Choose a track to squonk to!", kb
 
 async def play_song(chat_id, song_file=None, player_mode=False):
     group_id = str(chat_id)
@@ -105,6 +161,9 @@ async def play_song(chat_id, song_file=None, player_mode=False):
             title = meta.get("title", base)
             artist = meta.get("artist", "$SQUONK")
 
+    # Izvēlamies nejaušu meme tekstu
+    meme_text = random.choice(meme_texts)
+
     message = await bot.send_audio(
         chat_id,
         open(file_path, "rb"),
@@ -112,8 +171,9 @@ async def play_song(chat_id, song_file=None, player_mode=False):
         performer=artist,
         duration=duration,
         caption=(
-            f"🎶 Squonking time!\n"
             "Press the Play button above to listen! 🎵\n"
+            f"\n"
+            f"{meme_text}\n"
             "Powered by $SQUONK – Learn more at squonk.meme"
         ),
         reply_markup=get_keyboard(player_mode=player_mode)
