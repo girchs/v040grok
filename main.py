@@ -23,7 +23,6 @@ os.makedirs(SONGS_FOLDER, exist_ok=True)
 os.makedirs(SESSIONS_FOLDER, exist_ok=True)
 
 # Globālie mainīgie atskaņotāja stāvokļa pārvaldībai
-player_active = {}  # {group_id: bool} – vai atskaņotājs ir aktīvs grupā
 player_message = {}  # {group_id: message_id} – pēdējās dziesmas ziņojuma ID
 active_chats = set()  # Čatu ID saraksts, kuros bots ir aktīvs
 
@@ -85,18 +84,12 @@ meme_texts = [
     "When the market’s volatile, but the beat’s stable! ⚖️"
 ]
 
-def get_keyboard(player_mode=False):
+def get_keyboard():
     kb = InlineKeyboardMarkup()
-    if player_mode:
-        kb.add(
-            InlineKeyboardButton("▶️ Play Next Automatically", callback_data="next_auto"),
-            InlineKeyboardButton("📜 Playlist", callback_data="show_playlist")
-        )
-    else:
-        kb.add(
-            InlineKeyboardButton("▶️ Next", callback_data="next"),
-            InlineKeyboardButton("📜 Playlist", callback_data="show_playlist")
-        )
+    kb.add(
+        InlineKeyboardButton("▶️ Next", callback_data="next"),
+        InlineKeyboardButton("📜 Playlist", callback_data="show_playlist")
+    )
     return kb
 
 def get_session_path(user_id):
@@ -143,7 +136,7 @@ async def generate_playlist(chat_id):
         kb.add(InlineKeyboardButton(f"▶️ {title}", callback_data=f"play:{f}"))
     return "🎵 Choose a track to squonk to!", kb
 
-async def play_song(chat_id, song_file=None, player_mode=False):
+async def play_song(chat_id, song_file=None):
     group_id = str(chat_id)
     folder = os.path.join(SONGS_FOLDER, group_id)
     songs = [f for f in os.listdir(folder) if f.endswith(".mp3")]
@@ -177,9 +170,9 @@ async def play_song(chat_id, song_file=None, player_mode=False):
             "\n"
             f"{formatted_meme_text}\n"
             "\n"
-            "Powered by $SQUONK – Learn more at squonk.meme"
+            "Powered by $SQUONK tears – Learn more at squonk.meme"
         ),
-        reply_markup=get_keyboard(player_mode=player_mode),
+        reply_markup=get_keyboard(),
         parse_mode="Markdown"
     )
     return message, duration
@@ -202,19 +195,18 @@ async def start(message: types.Message):
     if message.chat.type in ["group", "supergroup"]:
         active_chats.add(message.chat.id)
     await message.reply(
-        "🎵 **Get Ready to Squonk with $SQUONK Music Player V1!** 🎶\n"
-        "Hey there, Squonker! Welcome to the ultimate music experience for the $SQUONK community! 🚀\n\n"
-        "🔥 **What’s this all about?**\n"
-        "We’re here to bring you the squonkiest beats while celebrating the $SQUONK token. Play tracks, vibe with friends, and dive into the world of $SQUONK – all in one place!\n\n"
-        "🎸 **How to Squonk:**\n"
-        "- Use /play to spin a single track.\n"
-        "- Fire up /start_player for non-stop squonking (stop it with /stop_player).\n"
-        "- Check out all tracks with /playlist.\n"
-        "- Learn more about $SQUONK with /token.\n"
-        "💡 *Tip:* Press the Play button on each track to listen!\n\n"
-        "🌟 **Powered by $SQUONK**\n"
-        "This player is brought to you by the $SQUONK token – the heart of our ecosystem. Want to know more? Visit squonk.meme and join the squonking revolution!\n\n"
-        "Let’s make some noise together! 🎤 #SquonkMusic #SQUONK"
+        "🎧 **Welcome to $SQUONK Music Player V1!**  \n"
+        "Vibe with awesome tracks in your crypto community! 🚀  \n\n"
+        "🎵 **How to Play:**  \n"
+        "- /play – Spin a single track.  \n"
+        "- /playlist – See all tracks.  \n"
+        "- /token – Learn about $SQUONK.  \n"
+        "💡 *Tip:* Press the Play button to listen!  \n\n"
+        "⚙️ **Set Up in Other Groups:**  \n"
+        "1. Add this bot to your group.  \n"
+        "2. In a private chat with the bot, use /setup to link your group and upload tracks.  \n\n"
+        "🌟 Powered by $SQUONK – squonk.meme  \n"
+        "Let’s pump the beats and the crypto vibes! 🎉"
     )
 
 @dp.message_handler(commands=["setup"])
@@ -269,38 +261,6 @@ async def play(message: types.Message):
     if message:
         player_message[group_id] = message.message_id
 
-@dp.message_handler(commands=["start_player"])
-async def start_player(message: types.Message):
-    group_id = str(message.chat.id)
-    # Pievienojam čatu aktīvo sarakstam
-    active_chats.add(message.chat.id)
-    if player_active.get(group_id, False):
-        return await message.reply("🎵 Music player is already active! Use /stop_player to stop.")
-    
-    player_active[group_id] = True
-    await message.reply(
-        "🎵 Starting Squonk Music Player! 🎶\n"
-        "Each track will load automatically. Press the Play button on each track to listen.\n"
-        "Use /stop_player to stop the player."
-    )
-    message, duration = await play_song(message.chat.id, player_mode=True)
-    if message:
-        player_message[group_id] = message.message_id
-
-@dp.message_handler(commands=["stop_player"])
-async def stop_player(message: types.Message):
-    group_id = str(message.chat.id)
-    # Čats paliek aktīvs, lai turpinātu automātisko atskaņošanu
-    active_chats.add(message.chat.id)
-    if not player_active.get(group_id, False):
-        return await message.reply("🎵 Music player is not active!")
-    
-    player_active[group_id] = False
-    if group_id in player_message:
-        await bot.delete_message(chat_id=message.chat.id, message_id=player_message[group_id])
-        del player_message[group_id]
-    await message.reply("🎵 Squonk Music Player stopped.")
-
 @dp.message_handler(commands=["playlist"])
 async def playlist(message: types.Message):
     # Pievienojam čatu aktīvo sarakstam
@@ -326,7 +286,7 @@ async def callback_play_specific(call: types.CallbackQuery):
     # Pievienojam čatu aktīvo sarakstam
     active_chats.add(call.message.chat.id)
     song_file = call.data.split(":", 1)[1]
-    message, duration = await play_song(call.message.chat.id, song_file, player_mode=player_active.get(group_id, False))
+    message, duration = await play_song(call.message.chat.id, song_file)
     if message:
         player_message[group_id] = message.message_id
     await call.answer()
@@ -341,8 +301,8 @@ async def callback_buttons(call: types.CallbackQuery):
     if not songs:
         return await call.answer("❌ No songs available.", show_alert=True)
 
-    if call.data in ["next", "next_auto"]:
-        message, duration = await play_song(call.message.chat.id, player_mode=player_active.get(group_id, False))
+    if call.data in ["next", "next_auto"]:  # "next_auto" vairs netiek izmantots, bet saglabājam saderībai
+        message, duration = await play_song(call.message.chat.id)
         if message:
             player_message[group_id] = message.message_id
     elif call.data == "show_playlist":
