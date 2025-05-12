@@ -159,6 +159,16 @@ async def play_song(chat_id, song_file=None):
     meme_text = random.choice(meme_texts)
     formatted_meme_text = f"*{meme_text}*"
 
+    # Izdzēšam iepriekšējo dziesmas ziņojumu, ja tāds eksistē
+    if group_id in player_message:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=player_message[group_id])
+        except Exception as e:
+            logging.warning(f"Failed to delete previous message in chat {chat_id}: {e}")
+        finally:
+            del player_message[group_id]  # Notīrām veco ID, lai izvairītos no problēmām
+
+    # Nosūtām jauno dziesmas ziņojumu
     message = await bot.send_audio(
         chat_id,
         open(file_path, "rb"),
@@ -170,11 +180,13 @@ async def play_song(chat_id, song_file=None):
             "\n"
             f"{formatted_meme_text}\n"
             "\n"
-            "Powered by $SQUONK tears – Learn more at squonk.meme"
+            "Powered by $SQUONK – Learn more at squonk.meme"
         ),
         reply_markup=get_keyboard(),
         parse_mode="Markdown"
     )
+    if message:
+        player_message[group_id] = message.message_id
     return message, duration
 
 # Fona uzdevums, kas ik pēc 30 minūtēm iemet nejaušu dziesmu čatā
